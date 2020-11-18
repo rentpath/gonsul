@@ -17,7 +17,9 @@ func (e *exporter) parseDir(directory string, localData map[string]string) {
 	files, _ := ioutil.ReadDir(directory)
 	// Loop each entry
 	for _, file := range files {
-		if file.IsDir() {
+		if strings.HasPrefix(file.Name(), ".") {
+			continue
+		} else if file.IsDir() {
 			// We found a directory, recurse it
 			newDir := directory + "/" + file.Name()
 			e.parseDir(newDir, localData)
@@ -70,7 +72,7 @@ func (e *exporter) parseFile(filePath string, value string, localData map[string
 	}
 
 	// Check if the file is a YAML one
-	if ext == ".yaml" {
+	if (ext == ".yaml" || ext == ".yml") {
 		// Check if we should parse JSON files
 		if e.config.ShouldExpandYAML() {
 			// Great, we should iterate our JSON (And that's the value)
