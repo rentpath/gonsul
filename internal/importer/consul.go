@@ -1,8 +1,8 @@
 package importer
 
 import (
-	"github.com/miniclip/gonsul/internal/entities"
-	"github.com/miniclip/gonsul/internal/util"
+	"github.com/rentpath/gonsul/internal/entities"
+	"github.com/rentpath/gonsul/internal/util"
 
 	"bytes"
 	"encoding/json"

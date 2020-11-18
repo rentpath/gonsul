@@ -1,8 +1,8 @@
 package app
 
 import (
-	"github.com/miniclip/gonsul/internal/config"
-	"github.com/miniclip/gonsul/tests/mocks"
+	"github.com/rentpath/gonsul/internal/config"
+	"github.com/rentpath/gonsul/tests/mocks"
 
 	. "github.com/onsi/gomega"
 	"os"

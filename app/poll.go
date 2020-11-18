@@ -1,8 +1,8 @@
 package app
 
 import (
-	"github.com/miniclip/gonsul/internal/config"
-	"github.com/miniclip/gonsul/internal/util"
+	"github.com/rentpath/gonsul/internal/config"
+	"github.com/rentpath/gonsul/internal/util"
 
 	"fmt"
 	"time"

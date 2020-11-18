@@ -1,7 +1,7 @@
 package exporter
 
 import (
-	"github.com/miniclip/gonsul/internal/entities"
+	"github.com/rentpath/gonsul/internal/entities"
 
 	"fmt"
 	"io/ioutil"
