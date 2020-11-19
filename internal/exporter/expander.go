@@ -17,6 +17,10 @@ func (e *exporter) traverseMap(path string, arbitraryJSON map[string]interface{}
 			piece := e.createPiece(newPath, value.(string))
 			localData[piece.KVPath] = piece.Value
 
+		case int:
+			piece := e.createPiece(newPath,  strconv.Itoa(value.(int)))
+			localData[piece.KVPath] = piece.Value
+
 		case bool:
 			// We have a string value, create piece and add to collection
 			piece := e.createPiece(newPath, strconv.FormatBool(value.(bool)))
@@ -38,4 +42,5 @@ func (e *exporter) traverseMap(path string, arbitraryJSON map[string]interface{}
 			e.traverseMap(newPath, value.(map[string]interface{}), localData)
 		}
 	}
+
 }

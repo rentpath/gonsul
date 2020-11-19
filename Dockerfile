@@ -1,19 +1,8 @@
-ARG GONSUL=/go/src/github.com/rentpath/gonsul
-
-FROM golang:1.14.3-alpine3.11 as build
-ARG GONSUL
-
-RUN apk --no-cache add build-base dep git
-RUN mkdir -p $GONSUL
-WORKDIR $GONSUL
+FROM golang:1.15-alpine
+WORKDIR /go/src/gonsul
 COPY . .
-RUN make
 
-FROM alpine
-ARG GONSUL
+RUN go get -d -v ./...
+RUN go install -v ./...
 
-COPY --from=build $GONSUL/bin/gonsul /usr/bin/gonsul
-RUN adduser -D gonsul
-USER gonsul
-
-ENTRYPOINT [ "/usr/bin/gonsul" ]
+CMD ["gonsul"]
