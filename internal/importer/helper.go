@@ -27,11 +27,6 @@ func (i *importer) createOperationMatrix(liveData map[string]string, localData m
 
 	// Check for updates or inserts
 	for localKey, localVal := range localData {
-		// Make sure we do not have an empty value (Consul KV will not have it)
-		if localVal == "" {
-			continue
-		}
-
 		// Shall we run secret replacement
 		if i.config.DoSecrets() {
 			localVal, err = mustache.Render(localVal, i.config.GetSecretsMap())
