@@ -15,8 +15,10 @@ import (
 )
 
 var (
+	consulDC string
 	consulUrl string
 	consulPrefix string
+	rootPath string
 
 	inserts   = 0
 	updates   = 0
@@ -48,10 +50,12 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-	flag.StringVar(&consulUrl, "consul-url", "", "(REQUIRED) The Consul URL REST API endpoint (Full URL with scheme)")
+	flag.StringVar(&consulUrl, "consul-url", "http://127.0.0.1:8500", "(REQUIRED) The Consul URL REST API endpoint (Full URL with scheme)")
 	flag.StringVar(&consulPrefix, "consul-prefix", "", "The base KV path will be prefixed to dir path")
+	flag.StringVar(&consulDC, "consul-datacenter", "", "The Consul datacenter to use")
+	flag.StringVar(&rootPath, "root-path", ".", "The base directory to walk for files")
 	flag.Parse()
-	filepath.Walk(".", func(walkPath string, info os.FileInfo, err error) error {
+	filepath.Walk(rootPath, func(walkPath string, info os.FileInfo, err error) error {
 		if info.IsDir() && strings.HasPrefix(info.Name(), ".") && info.Name() != "." {
 			return filepath.SkipDir
 		} else if filepath.Ext(walkPath) == ".yml" {
@@ -122,7 +126,11 @@ func main() {
 	transactionsSets = append(transactionsSets, transactions)
 	for _, transactions := range transactionsSets {
 		jsonPayload := strings.NewReader("[" + strings.Join(transactions, ",") + "]")
-		req, err := http.NewRequest("PUT", consulUrl + "/v1/txn", jsonPayload)
+		txnUrl := consulUrl + "/v1/txn"
+		if consulDC != "" {
+			txnUrl = txnUrl + "?dc=" + consulDC
+		}
+		req, err := http.NewRequest("PUT", txnUrl, jsonPayload)
 		if err != nil {
 			panic("NewRequestPUT: "+err.Error())
 		}
