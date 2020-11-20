@@ -2,4 +2,4 @@
 bin
 vendor
 tests/mocks/*
-!tests/mocks/.gitkeep
+!tests/mocks/.gitkeep.DS_Store

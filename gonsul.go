@@ -1,62 +1,145 @@
 package main
 
 import (
-	"github.com/rentpath/gonsul/app"
-	"github.com/rentpath/gonsul/internal/config"
-	"github.com/rentpath/gonsul/internal/exporter"
-	"github.com/rentpath/gonsul/internal/importer"
-	"github.com/rentpath/gonsul/internal/util"
-
+	"encoding/base64"
+	"encoding/json"
+	"flag"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
-	"time"
+	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v3"
 )
+
+var (
+	consulUrl string
+	consulPrefix string
+
+	inserts   = 0
+	updates   = 0
+	deletes   = 0
+	unchanged = 0
+
+	bodyStruct []ConsulResult
+	operations []string
+	transactions []string
+	transactionsSets [][]string
+
+	localData = make(map[string]string)
+	liveData = make(map[string]string)
+)
+
+type ConsulResult struct {
+	LockIndex   int    `json:"lockIndex"`
+	Key         string `json:"Key"`
+	Flags       int    `json:"Flags"`
+	Value       string `json:"Value"`
+	CreateIndex int    `json:"CreateIndex"`
+	ModifyIndex int    `json:"ModifyIndex"`
+}
 
 func main() {
 	defer func() {
 		if r := recover(); r != nil {
-			var recoveredError = r.(util.GonsulError)
-			os.Exit(recoveredError.Code)
+			fmt.Println("[FATAL] " + r.(string))
+			os.Exit(1)
 		}
 	}()
-
-	start()
-}
-
-func start() {
-	// Build our configuration
-	cfg, err := config.NewConfig()
+	flag.StringVar(&consulUrl, "consul-url", "", "(REQUIRED) The Consul URL REST API endpoint (Full URL with scheme)")
+	flag.StringVar(&consulPrefix, "consul-prefix", "", "The base KV path will be prefixed to dir path")
+	flag.Parse()
+	filepath.Walk(".", func(walkPath string, info os.FileInfo, err error) error {
+		if info.IsDir() && strings.HasPrefix(info.Name(), ".") && info.Name() != "." {
+			return filepath.SkipDir
+		} else if filepath.Ext(walkPath) == ".yml" {
+			content, err := ioutil.ReadFile(walkPath)
+			if err != nil {
+				panic(fmt.Sprintf("error reading YAML file: %s with Message: %s", walkPath, err.Error()))
+			}
+			var parsedYAML map[string]string
+			err = yaml.Unmarshal([]byte(content), &parsedYAML)
+			if err != nil {
+				panic(fmt.Sprintf("error parsing YAML file: %s with Message: %s", walkPath, err.Error()))
+			}
+			for key, value := range parsedYAML {
+				localData[filepath.Join(consulPrefix, strings.TrimSuffix(walkPath, filepath.Ext(walkPath)), key)] = value
+			}
+		}
+		return nil
+	})
+	resp, err := http.Get(fmt.Sprintf("%s/v1/kv/%s/?recurse=true", consulUrl, consulPrefix))
 	if err != nil {
-		util.ExitError(err, util.ErrorBadParams, util.NewLogger(0))
+		panic("DoGET: "+err.Error())
 	}
-
-	// Build our logger
-	logger := util.NewLogger(cfg.GetLogLevel())
-
-	// Are we just printing the app version
-	if cfg.IsShowVersion() {
-		fmt.Println("Gonsul version: " + app.Version)
-		fmt.Println("Build date: " + app.BuildDate)
-		return
+	if resp.StatusCode >= 400 && resp.StatusCode != 404 {
+		panic("Invalid response from consul: "+resp.Status)
 	}
-
-	// Build all dependencies for our application
-	hookHttpServer := app.NewHookHttp(cfg, logger)
-	httpClient := &http.Client{Timeout: time.Second * time.Duration(cfg.GetTimeout())}
-	exp := exporter.NewExporter(cfg, logger)
-	imp := importer.NewImporter(cfg, logger, httpClient)
-	sigChannel := make(chan os.Signal)
-	// Build our Applications
-	once := app.NewOnce(cfg, logger, exp, imp)
-	hook := app.NewHook(hookHttpServer, cfg, logger, once)
-	poll := app.NewPoll(cfg, logger, once, 0)
-	// Build our main Application container
-	application := app.NewApplication(cfg, once, hook, poll, sigChannel)
-
-	// Start our application
-	application.Start()
-
-	// We're still here, all went well, good bye
-	logger.PrintInfo("Quitting... bye.")
+	if resp.StatusCode != 404 {
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			panic("ReadGetResponse: "+err.Error())
+		}
+		bodyString := string(bodyBytes)
+		err = json.Unmarshal([]byte(bodyString), &bodyStruct)
+		if err != nil {
+			panic("Unmarshal: "+err.Error())
+		}
+		for _, v := range bodyStruct {
+			liveData[v.Key] = v.Value
+		}
+	}
+	for localKey, localVal := range localData {
+		localValB64 := base64.StdEncoding.EncodeToString([]byte(localVal))
+		setPayload := fmt.Sprintf("{\"KV\":{\"Verb\":\"set\",\"Key\":\"%s\",\"Value\":\"%s\"}}", localKey, localValB64)
+		if liveVal, ok := liveData[localKey]; ok {
+			if localValB64 != liveVal {
+				updates++
+				operations = append(operations, setPayload)
+			} else {
+				unchanged++
+			}
+		} else {
+			inserts++
+			operations = append(operations, setPayload)
+		}
+	}
+	for liveKey := range liveData {
+		if _, ok := localData[liveKey]; !ok {
+			deletes++
+			operations = append(operations, fmt.Sprintf("{\"KV\":{\"Verb\":\"set\",\"Key\":\"%s\"}}", liveKey))
+		}
+	}
+	for _, op := range operations {
+		if len(transactions) == 64 || len(strings.Join(transactions, ",") + op) > 500000 {
+			transactionsSets = append(transactionsSets, transactions)
+			transactions = []string{}
+		}
+		transactions = append(transactions, op)
+	}
+	transactionsSets = append(transactionsSets, transactions)
+	for _, transactions := range transactionsSets {
+		jsonPayload := strings.NewReader("[" + strings.Join(transactions, ",") + "]")
+		req, err := http.NewRequest("PUT", consulUrl + "/v1/txn", jsonPayload)
+		if err != nil {
+			panic("NewRequestPUT: "+err.Error())
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			panic("PUT: "+err.Error())
+		}
+		if resp.StatusCode != 200 {
+			bodyBytes, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				panic("ReadResponse: "+err.Error())
+			}
+			panic("TransactionError: "+string(bodyBytes))
+		}
+		for _, txn := range transactions {
+			fmt.Println("[INFO] " + txn)
+		}
+	}
+	fmt.Println("[INFO] " + fmt.Sprintf("Finished: %d Inserts, %d Updates, %d Deletes, %d Unchanged", inserts, updates, deletes, unchanged))
 }
