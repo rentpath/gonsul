@@ -113,7 +113,7 @@ func main() {
 	for liveKey := range liveData {
 		if _, ok := localData[liveKey]; !ok {
 			deletes++
-			operations = append(operations, fmt.Sprintf("{\"KV\":{\"Verb\":\"set\",\"Key\":\"%s\"}}", liveKey))
+			operations = append(operations, fmt.Sprintf("{\"KV\":{\"Verb\":\"delete\",\"Key\":\"%s\"}}", liveKey))
 		}
 	}
 	for _, op := range operations {
