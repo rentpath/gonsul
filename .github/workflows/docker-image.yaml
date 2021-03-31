@@ -21,7 +21,7 @@ jobs:
         registry: ghcr.io
         username: ${{ secrets.GHCR_USER_NAME }}
         password: ${{ secrets.GHCR_USER_PAT }}
-        repository: rentpath/${{ github.repository }}
+        repository: ${{ github.repository }}
         tag_with_ref: true
         tag_with_sha: true
         tags: latest,v3.1.1
